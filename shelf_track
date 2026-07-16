@@ -1,0 +1,124 @@
+import sqlite3
+
+def q(sql, p=(), f=False):
+    with sqlite3.connect("ebooksotrack.db") as c:
+        c.execute("PRAGMA foreign_keys = ON;")
+        cursor = c.execute(sql, p)
+        return cursor.fetchall() if f else c.commit()
+    
+def init():
+    q("""CREATE TABLE IF NOT EXISTS shelf_author (
+        id INT PRIMARY KEY,
+        name TEXT,
+      country TEXT
+    );""")
+    q("""CREATE TABLE IF NOT EXISTS book (
+        id INT PRIMARY KEY,
+        title TEXT,
+        authorID INT,
+        qty INT,
+        FOREIGN KEY (authorID) REFERENCES shelf_author(id)
+            ON UPDATE CASCADE
+    );""")
+
+    if not q("SELECT * FROM shelf_author;", f=True):
+     authors = [
+        (1290, "Charles Dickens", "England"),
+        (8937, "J.K. Rowling", "England"),
+        (2356, "C.S. Lewis", "Ireland"),
+        (6380, "J.R.R. Tolkien", "South Africa"),
+        (5620, "Lewis Carroll", "England")
+    ]
+    books = [
+        (3001, "A Tale of Two Cities", 1290, 30),
+        (3002, "Harry Potter...", 8937, 40),
+        (3003, "The Lion...", 2356, 25),
+        (3004, "The Lord...", 6380, 37),
+        (3005, "Alice...", 5620, 12)
+      ]
+    for a in authors:
+        q("INSERT INTO shelf_author VALUES (?, ?, ?);", a)
+    for b in books:
+        q("INSERT INTO book VALUES (?, ?, ?, ?);", b)
+
+def g(txt, is_num=False):
+    while True:
+        v = input(txt).strip()
+        if v and (not is_num or (v.isdigit() and len(v) == 4)):
+            return int(v) if is_num else v
+    
+def add():
+    bid = g("Bok ID: ", 1)
+    t = g("Title: ")
+    aid = g("Author ID: ", 1)
+
+    if not q("SELECT * FROM shelf_author WHERE id = ?;", (aid,), f=True):
+        name = g("Auth Name: ")
+        country = g("Auth Country: ")
+        q("INSERT INTO shelf_author VALUES (?, ?, ?);", (aid, name, country))
+
+    q("INSERT INTO book VALUES (?, ?, ?, ?);", (bid, t, aid, int(g("Qty: ", 1))))
+
+def upd():
+
+    target_id = g("ID to update: ", 1)
+
+    sql = """SELECT b.title, b.qty, b.authorID, a.name, a.country
+             FROM book b
+             INNER JOIN shelf_author a ON b.authorID = a.id
+             WHERE b.id = ?;"""
+    
+    res = q(sql, (target_id,), f=True)
+    if not res:
+        return print("Missing")
+    
+    t, q_val, aid, an, ac = res[0]
+    opt = input("1.Qty | 2.Title | 3.Author: ")
+    
+    if opt == "2":
+        q("UPDATE book SET title = ? WHERE id = ?;", (g("New Title: "), target_id))
+    elif opt == "3":
+        name = g("New Name: ")
+        country = g("New Country: ")
+        q("""UPDATE shelf_author
+             SET name = ?, country = ?
+             WHERE id = ?;""", (name, country, aid))
+    else:
+        q("UPDATE book SET qty = ? WHERE id = ?;", (int(input("New Qty: ")), target_id))
+
+def view():
+    sql = """SELECT b.title, a.name, a.country
+             FROM book b
+             INNER JOIN shelf_author a ON b.authorID = a.id;"""
+    r = q(sql, f=True)
+
+    titles = [i[0] for i in r]
+    names = [i[1] for i in r]
+    countries = [i[2] for i in r]
+
+    for t, n, c in zip(titles, names, countries):
+        print(f"Details ----\nTitle: {t}\nAuthor: {n}\nCountry: {c}")
+        print("-" * 13)
+
+init()
+m = {
+    "1": add,
+    "2": upd,
+    "3": lambda: q(
+        "DELETE FROM book WHERE id=?;",
+        (g("Delete ID: ", 1),)
+    ),
+    "4": lambda: print(q(
+        "SELECT * FROM book WHERE title LIKE ?;",
+        (f"%{g('Search: ')}%",),
+        f=True
+    )),
+    "5": view
+}
+
+while True:
+    ch = input("1.Add 2.upd 3.Del 4.Src 5.View 0.Exit: ")
+    if ch == "0":
+        break
+    if ch in m:
+        m[ch]()
